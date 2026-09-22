@@ -1,0 +1,20 @@
+{
+  "name": "th09-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "cpp:analyze": "node scripts/cpp/analyze.mjs",
+    "cpp:build": "node scripts/cpp/build.mjs",
+    "test": "node --test tests/cpp/*.test.mjs",
+    "test:archive-oracle": "node --test tests/oracle/archive.test.mjs",
+    "web:build": "node scripts/build-sdl.mjs --release",
+    "web:package": "node scripts/package-release.mjs",
+    "start": "node artifacts/sdl-release/scripts/serve.mjs --port 8096",
+    "test:server": "node --test tests/server/*.test.mjs",
+    "test:web": "node tests/browser/release-check.mjs"
+  },
+  "dependencies": {
+    "ws": "8.21.3"
+  }
+}
