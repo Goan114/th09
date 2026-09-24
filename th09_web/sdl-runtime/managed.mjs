@@ -20,13 +20,49 @@ const fatal=e=>{const message=e?.message||String(e);$('#error').textContent=mess
 const sync=(populate=false)=>{const current=chain.then(()=>new Promise((r,j)=>core.FS.syncfs(populate,e=>e?j(e):r())));chain=current.catch(()=>{});return current;};
 function path(value){let name=String(value).replaceAll('\\','/').toLowerCase().replace(/^\/savesth09\//,'').replace(/^\//,'');if(!/^(?:score\.dat|th09\.cfg|replay\/th9_(?:\d{2}|ud[a-z0-9]{4})\.rpyx?)$/.test(name))throw Error('存档路径无效');return name;}
 function apply(){const sensitivity=Number(options.touchSensitivity??100);options.touchSensitivity=Number.isFinite(sensitivity)?Math.max(100,Math.min(300,sensitivity)):100;core._th09_touch_options(+!!options.touchEnabled,Math.max(0,['touch','touch-unlimited','joystick','joystick-free'].indexOf(options.touchMovementMode)),options.touchSensitivity/100,+(options.touchFocusMode==='two-finger'),+!!options.doubleTapBombEnabled);if(launched)core._th09_music_enabled(+music);}
-async function resource(r){if(!(/^\/(?:music|fonts)\/[a-z0-9_.-]+$/.test(r.path)||r.path==='/msgothic.ttc'))throw Error('资源路径无效');const u=new URL(r.url,location.href);if(u.origin!==location.origin)throw Error('资源来源无效');const response=await fetch(u);if(!response.ok)throw Error('资源读取失败');const bytes=new Uint8Array(await response.arrayBuffer());core.FS.mkdirTree(r.path.slice(0,r.path.lastIndexOf('/'))||'/');core.FS.writeFile(r.path,bytes);emit('transfer',{mode:r.path.startsWith('/music/')?'ogg':'runtime',loaded:bytes.length,total:bytes.length,path:r.path});}
+async function resource(r){if(!(/^\/(?:music|fonts)\/[a-z0-9_.-]+$/.test(r.path)||r.path==='/msgothic.ttc'||r.path==='/unifont.otf'))throw Error('资源路径无效');const u=new URL(r.url,location.href);if(u.origin!==location.origin)throw Error('资源来源无效');const response=await fetch(u);if(!response.ok)throw Error('资源读取失败');const bytes=new Uint8Array(await response.arrayBuffer());core.FS.mkdirTree(r.path.slice(0,r.path.lastIndexOf('/'))||'/');core.FS.writeFile(r.path,bytes);emit('transfer',{mode:r.path.startsWith('/music/')?'ogg':'runtime',loaded:bytes.length,total:bytes.length,path:r.path});}
+// Same runtimePack contract as the TH10 shell: Launcher verifies SHA-256,
+// Runtime rechecks manifest identity, path scope and each mounted file size.
+let runtimePackFiles=[];
+function assertRuntimePackManifest(manifest,pack){
+ if(manifest?.schema!=='eagler-touhou/thcrap-static-pack/1'||manifest.game!==game||
+    manifest.language!==pack.language||typeof manifest.runtimeVersion!=='string'||
+    !Array.isArray(manifest.files)||manifest.files.length>256)throw Error('Invalid TH09 language pack manifest');
+ for(const file of manifest.files)
+  if(typeof file?.path!=='string'||!file.path.startsWith('/thcrap/th09/')||file.path.includes('\\')||file.path.includes('..')||
+     !Number.isInteger(file.bytes)||file.bytes<0)throw Error('Invalid TH09 language pack file');
+}
+async function installRuntimePack(pack){
+ if(launched)throw Error('Runtime resources cannot be changed after launch');
+ if(typeof pack?.url!=='string'||typeof pack.language!=='string'||
+    !Number.isInteger(pack.bytes)||pack.bytes<=0||
+    !pack.manifest||!Array.isArray(pack.files))throw Error('Invalid TH09 language pack');
+ const url=new URL(pack.url,location.href);
+ if(url.origin!==location.origin)throw Error('Cross-origin TH09 language pack');
+ assertRuntimePackManifest(pack.manifest,pack);
+ const expected=new Map(pack.manifest.files.map(file=>[file.path,file]));
+ if(pack.files.length!==expected.size)throw Error('TH09 language pack file count mismatch');
+ const verified=[];
+ for(const file of pack.files){
+  if(typeof file?.path!=='string'||!file.path.startsWith('/thcrap/th09/')||file.path.includes('\\')||file.path.includes('..')||
+     !(file.bytes instanceof Uint8Array))throw Error('Invalid TH09 language pack path');
+  const declaration=expected.get(file.path);
+  if(!declaration||file.bytes.length!==declaration.bytes)throw Error(file.path+': size mismatch');
+  verified.push({path:file.path,bytes:file.bytes});
+ }
+ for(const path of runtimePackFiles){try{core.FS.unlink(path);}catch{}}
+ runtimePackFiles=[];
+ for(const file of verified){
+  core.FS.mkdirTree(file.path.slice(0,file.path.lastIndexOf('/')));
+  core.FS.writeFile(file.path,file.bytes,{canOwn:true});runtimePackFiles.push(file.path);
+ }
+}
 async function save(){if(launched&&!core._th09_save_snapshot())throw Error('保存失败');await sync();}
 async function stop(){if(stopping)return;stopping=true;try{netplay?.close();core._th09_loop_stop();await save();core._th09_game_close();launched=false;delete window.__th09Runtime;emit('exit',{code:0,status:'success'});}finally{stopping=false;}}
 function openNetwork(){if(!launched)return;core._th09_loop_pause(1);const allowed=status().title[1]&&!netplay.socket;$('#create').disabled=$('#join').disabled=!allowed;if(!allowed&&!netplay.socket)$('#network-status').textContent='请先返回游戏标题。';if(!$('#network').open)$('#network').showModal();emit('network-dialog',{open:true});}
 $('#create').onclick=()=>netplay.connect().catch(e=>$('#network-status').textContent=e.message);$('#join').onclick=()=>netplay.connect($('#code').value).catch(e=>$('#network-status').textContent=e.message);$('#leave').onclick=()=>netplay.close();$('#close').onclick=()=>$('#network').close();$('#network').addEventListener('close',()=>{emit('network-dialog',{open:false});core._th09_keys_clear();core._th09_loop_pause(+document.hidden);canvas.focus();});
 async function command(m){switch(m.command){
-case 'configure':options=m.options||{};music=m.music==='ogg';for(const r of [...(m.sharedResources||[]),...(m.runtimeResources||[]),...(m.resources||[])])await resource(r);if(core.FS.analyzePath('/msgothic.ttc').exists){try{core.FS.unlink('/fonts/msgothic.ttc');}catch{}core.FS.symlink('/msgothic.ttc','/fonts/msgothic.ttc');}apply();return {};
+case 'configure':options=m.options||{};music=m.music==='ogg';for(const r of [...(m.sharedResources||[]),...(m.runtimeResources||[]),...(m.resources||[])])await resource(r);if(m.runtimePack)await installRuntimePack(m.runtimePack);if(core.FS.analyzePath('/msgothic.ttc').exists){try{core.FS.unlink('/fonts/msgothic.ttc');}catch{}core.FS.symlink('/msgothic.ttc','/fonts/msgothic.ttc');}apply();return {};
 case 'resources':for(const r of m.resources||[])await resource(r);return {};
 case 'keyboard':{const code=runtimeKeyboardCode(m);if(!$('#network').open&&scanCodes[code])core._th09_key(scanCodes[code],+!!m.down);return {};}
 case 'keyboard-clear':core._th09_keys_clear();return {};

@@ -12,7 +12,7 @@ const sdk=sdkCandidates.find(path=>existsSync(resolve(path,'install/emscripten/e
 if(!sdk)throw Error('Emscripten SDK not found; set TH09_EMSDK to an installed emsdk directory');
 const out=resolve(root,process.env.TH09_OUTPUT||(release?'artifacts/sdl-release':'artifacts/sdl3')),objects=resolve(out,'objects');mkdirSync(objects,{recursive:true});
 const env={...process.env,EM_CONFIG:resolve(sdk,'.emscripten'),EMSDK:sdk,EMCC_CORES:'4'};
-const common=['-O2','-g0','-std=c++17','-ffp-contract=off','-fno-strict-aliasing','-fno-exceptions','-fno-rtti','-DTH_NATIVE_PLATFORM=1','-DTH09_DEVELOPMENT_HARNESS='+Number(!release),'--use-port=sdl3','--use-port=sdl3_ttf'];
+const common=['-O2','-g0','-std=c++17','-ffp-contract=off','-fno-strict-aliasing','-fno-exceptions','-fno-rtti','-DTH_NATIVE_PLATFORM=1','-DTH_ENABLE_THCRAP=1','-DTH09_DEVELOPMENT_HARNESS='+Number(!release),'--use-port=sdl3','--use-port=sdl3_ttf'];
 const run=args=>new Promise((accept,reject)=>{const child=spawn('python',[resolve(sdk,'install/emscripten/emcc.py'),...args],{cwd:root,env,windowsHide:true,stdio:['ignore','pipe','pipe']});let log='';for(const stream of [child.stdout,child.stderr])stream.on('data',b=>{log+=b;process.stdout.write(b);});child.on('error',reject);child.on('exit',code=>code?reject(Error('TH09 Emscripten build failed '+code+'\n'+log)):accept());});
 const source=[];for(const dir of ['cpp/game','cpp/sdl'])for(const name of readdirSync(resolve(root,dir)).filter(n=>n.endsWith('.cpp')).sort())source.push(resolve(root,dir,name));source.push(resolve(workspace,'portable/sdl/Renderer.cpp'));
 const allHeaders=dir=>readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?allHeaders(resolve(dir,e.name)):/\.(h|hpp|inc)$/.test(e.name)?[resolve(dir,e.name)]:[]);

@@ -31,7 +31,7 @@ for (const [name, source] of inputs) {
   copyFileSync(source, resolve(output, name));
 }
 writeFileSync(resolve(output, 'manifest.json'), JSON.stringify({
-  game: 'th09', protocol: 'eagler-touhou/1', features: { thprac: false, languages: false, focusHitbox: false },
+  game: 'th09', protocol: 'eagler-touhou/1', features: { thprac: false, languages: true, focusHitbox: false },
 }, null, 2) + '\n');
 // version.json is a generation-local Runtime resource: netplay.mjs fetches it
 // relative to the Runtime document so the immutable generation stays closed.
